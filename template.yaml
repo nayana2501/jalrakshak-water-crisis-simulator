@@ -1,0 +1,150 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: JalRakshak MVP - S3+CloudFront, API Gateway, Lambda, DynamoDB, EventBridge, SNS
+
+Parameters:
+  AlertEmail:
+    Type: String
+    Description: Email that receives high-risk alerts (confirm the SNS subscription email)
+  ApiToken:
+    Type: String
+    NoEcho: true
+    MinLength: 12
+    Description: Shared secret required in the x-api-key header for POST /readings and PUT /sites
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 15
+    MemorySize: 256
+    CodeUri: src/
+    Environment:
+      Variables:
+        TABLE_NAME: !Ref Table
+
+Resources:
+  Table:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: pk, AttributeType: S}
+        - {AttributeName: sk, AttributeType: S}
+      KeySchema:
+        - {AttributeName: pk, KeyType: HASH}
+        - {AttributeName: sk, KeyType: RANGE}
+      TimeToLiveSpecification: {AttributeName: ttl, Enabled: true}
+
+  AlertTopic:
+    Type: AWS::SNS::Topic
+
+  AlertSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref AlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  Api:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins:
+          - !Sub https://${Distribution.DomainName}
+          - http://localhost:8000
+        AllowMethods: [GET, POST, PUT, OPTIONS]
+        AllowHeaders: [content-type, x-api-key]
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 20
+        ThrottlingRateLimit: 10
+
+  ReadingsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: readings.handler
+      Environment:
+        Variables:
+          API_TOKEN: !Ref ApiToken
+      Policies:
+        - DynamoDBCrudPolicy: {TableName: !Ref Table}
+      Events:
+        PostReading: {Type: HttpApi, Properties: {ApiId: !Ref Api, Method: POST, Path: /readings}}
+        GetReadings: {Type: HttpApi, Properties: {ApiId: !Ref Api, Method: GET, Path: '/readings/{site_id}'}}
+        PutSite: {Type: HttpApi, Properties: {ApiId: !Ref Api, Method: PUT, Path: '/sites/{site_id}'}}
+        GetSite: {Type: HttpApi, Properties: {ApiId: !Ref Api, Method: GET, Path: '/sites/{site_id}'}}
+
+  RiskFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: risk_check.handler
+      Timeout: 60
+      Environment:
+        Variables:
+          TOPIC_ARN: !Ref AlertTopic
+      Policies:
+        - DynamoDBCrudPolicy: {TableName: !Ref Table}
+        - SNSPublishMessagePolicy: {TopicName: !GetAtt AlertTopic.TopicName}
+      Events:
+        Hourly:
+          Type: Schedule
+          Properties:
+            Schedule: rate(1 hour)
+
+  # --- Frontend hosting: private bucket served only through CloudFront ---
+  SiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  OAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub ${AWS::StackName}-oac
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultRootObject: index.html
+        Origins:
+          - Id: site
+            DomainName: !GetAtt SiteBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt OAC.Id
+            S3OriginConfig: {OriginAccessIdentity: ''}
+        DefaultCacheBehavior:
+          TargetOriginId: site
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # CachingDisabled: redeploys show instantly
+
+  SiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SiteBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: {Service: cloudfront.amazonaws.com}
+            Action: s3:GetObject
+            Resource: !Sub ${SiteBucket.Arn}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${Distribution}
+
+Outputs:
+  ApiUrl:
+    Value: !GetAtt Api.ApiEndpoint
+  SiteUrl:
+    Value: !Sub https://${Distribution.DomainName}
+  BucketName:
+    Value: !Ref SiteBucket
+  RiskFunctionName:
+    Value: !Ref RiskFunction

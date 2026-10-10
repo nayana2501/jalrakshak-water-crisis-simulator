@@ -1,0 +1,1 @@
+window.JAL_API="";

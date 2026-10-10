@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>JalRakshak – Water Crisis Simulator</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+--bg:#f3f8fa;--card:#fff;--ink:#12212a;--mut:#5d7280;--line:#d9e5ea;--acc:#0e7490;--bad:#c92a2a;--good:#2f9e5b;--warn:#d19a00}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e171c;--card:#16232a;--ink:#e8f1f5;--mut:#91a8b4;--line:#27393f;--acc:#38bdf8;--bad:#ff6b6b;--good:#4cd48a;--warn:#f2c230}}
+:root[data-theme="dark"]{--bg:#0e171c;--card:#16232a;--ink:#e8f1f5;--mut:#91a8b4;--line:#27393f;--acc:#38bdf8;--bad:#ff6b6b;--good:#4cd48a;--warn:#f2c230}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:860px;margin:0 auto;padding:20px 16px 40px}
+h1{font-size:1.6rem;margin:0}h1 span{color:var(--acc)}
+.sub{color:var(--mut);margin:4px 0 16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 18px}
+label{display:block;font-size:.85rem;color:var(--mut);margin-bottom:2px}
+input[type=range]{width:100%;accent-color:var(--acc)}
+input[type=number]{width:100%;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit}
+button{font:inherit;font-weight:600;border:0;border-radius:8px;padding:8px 14px;cursor:pointer;background:var(--acc);color:#fff}
+.val{font-weight:700;color:var(--ink)}
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.box{border-radius:12px;padding:12px 14px;border:1px solid var(--line)}
+.big{font-size:2.3rem;font-weight:800;line-height:1.05}
+.badge{display:inline-block;padding:3px 10px;border-radius:99px;color:#fff;font-weight:700;font-size:.85rem}
+.gain{text-align:center;font-weight:800;font-size:1.3rem;color:var(--good);margin:12px 0 0}
+.note{color:var(--mut);font-size:.82rem}
+ul{margin:8px 0 0;padding-left:20px}li{margin-bottom:6px}
+.tg label{display:inline-flex;gap:6px;align-items:center;margin:4px 16px 4px 0;font-size:.95rem;color:var(--ink)}
+table{width:100%;border-collapse:collapse;margin-top:10px}td,th{padding:6px 4px;border-bottom:1px solid var(--line);text-align:left;font-size:.92rem}td:last-child,th:last-child{text-align:right}
+.score{font-size:3rem;font-weight:800;line-height:1}
+svg{width:100%;height:auto;display:block}
+@media(max-width:560px){.grid,.cmp{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<main>
+<h1>Jal<span>Rakshak</span></h1>
+<p class="sub">Predict when a hostel, society or campus runs out of water, and see how many hours the right actions buy.</p>
+
+<div class="card">
+  <div class="grid">
+    <div><label>Temperature: <span class="val" id="v_temp"></span>°C</label><input id="temp" type="range" min="25" max="50" value="42"></div>
+    <div><label>People: <span class="val" id="v_ppl"></span></label><input id="ppl" type="range" min="50" max="2000" step="10" value="400"></div>
+    <div><label>Tanker / municipal supply change: <span class="val" id="v_sup"></span>%</label><input id="sup" type="range" min="-80" max="20" value="-30"></div>
+    <div><label>Leak: <span class="val" id="v_leak"></span> L/hour</label><input id="leak" type="range" min="0" max="1500" step="25" value="300"></div>
+    <div><label>Water in tank now: <span class="val" id="v_lvl"></span> L</label><input id="lvl" type="range" min="0" max="80000" step="500" value="45000"></div>
+    <div><label>Tank capacity (L)</label><input id="cap" type="number" value="80000" min="1000"></div>
+    <div><label>Normal supply (L/day)</label><input id="nsup" type="number" value="52000" min="0"></div>
+    <div><label>Tanker size (L)</label><input id="tk" type="number" value="8000" min="0"></div>
+    <div><label>Use per person (L/day), baseline assumption</label><input id="lpcd" type="number" value="135" min="20"></div>
+  </div>
+</div>
+
+<div class="cmp">
+  <div class="box"><span class="note">BEFORE: do nothing</span><div class="big" id="b_h"></div><span class="badge" id="b_r"></span></div>
+  <div class="box"><span class="note">AFTER: JalRakshak actions</span><div class="big" id="a_h" style="color:var(--good)"></div><span class="note" id="a_d"></span></div>
+</div>
+<p class="gain" id="gain"></p>
+<div class="card" style="margin-top:14px"><div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap"><div><div class="score" id="score"></div><span class="note">96-hour shortage risk score / 100 (before actions)</span></div><div id="scomp" style="flex:1;min-width:200px"></div></div></div>
+
+<div class="card" style="margin-top:14px"><b>Tank level, next 96 hours</b>
+  <div id="chart"></div>
+  <span class="note"><span style="color:var(--bad)">&#9632;</span> before &nbsp; <span style="color:var(--good)">&#9632;</span> after actions</span></div>
+
+<div class="card"><b>JalRakshak actions</b> <span class="note">tick to include, see the impact</span>
+  <div class="tg"><label><input type="checkbox" id="t_leak" checked> Fix detected leak</label><label><input type="checkbox" id="t_cut" checked> Reduce non-essential use</label><label><input type="checkbox" id="t_gw"> Reuse suitable greywater</label><label><input type="checkbox" id="t_tk" checked> Schedule tanker</label></div>
+  <table id="gtab"></table><ul id="acts"></ul></div>
+<div class="card"><b>Why are we running out?</b> <span class="note">written from the simulation numbers, no language model</span><ul id="why"></ul></div>
+<div class="card"><b>Next 24-hour supply-and-demand estimate</b><div id="bud"></div><p class="note" style="margin:8px 0 0">This is a 24-hour total, not a guarantee of continuous water availability. A daily surplus can still coincide with a shortage if hourly demand exceeds incoming supply and the tank runs low.</p></div>
+
+<div class="card"><b>Check against real readings</b>
+  <p class="note" style="margin:4px 0 10px">Read the tank level twice (no tanker delivery in between). If it drains faster than the model expects, the gap is a possible leak.</p>
+  <div class="grid">
+    <div><label>First reading (L)</label><input id="r1" type="number" placeholder="e.g. 45000"></div>
+    <div><label>Second reading (L)</label><input id="r2" type="number" placeholder="e.g. 41000"></div>
+    <div><label>Hours between readings</label><input id="dt" type="number" placeholder="e.g. 4"></div>
+    <div style="align-self:end"><button id="cal">Check for leak</button></div>
+  </div>
+  <p id="calmsg" style="margin:10px 0 0"></p>
+</div>
+
+<div class="card note"><b style="color:var(--ink)">How it works.</b> A transparent water-balance model, not a black box: hourly level = level + supply − use − leak. Use = people × baseline consumption (135 L/person/day assumed, editable) × heat factor (+1.5% per °C above 30). Assumptions: 35% of use is non-essential and can be cut by 40%; suitable greywater reuse trims fresh-water use by 10% (illustrative assumption). The 96-hour crisis score is based on the no-action forecast: 100 × (1 − hours to empty ÷ 96), bounded between 0 and 100. It reaches 0 when the no-action forecast is 96 hours or longer; the action-adjusted empty time is shown separately. Tanker is scheduled to arrive 6 h before predicted empty. All assumptions are yours to change; replace them with your site's real numbers.
+<br><b style="color:var(--ink)">AWS plan:</b> S3 + CloudFront (this page), API Gateway + Lambda (model), DynamoDB (readings), EventBridge (hourly risk check), SNS (alerts).</div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const NE=.35,CUT=.4,HEAT=.015,LPCD=135,GW=.10,LEAD=6;
+const fmt=e=>e==null?">120 h":(e<1?"<1 h":Math.round(e)+" h");
+function sim(use,inflow,leak,lvl,cap,tkL,tkAt){
+  const out=[lvl];let L=lvl,e=null;
+  for(let h=1;h<=120;h++){
+    const prev=L;L+=inflow-use-leak;if(tkL&&h===tkAt)L+=tkL;L=Math.min(L,cap);
+    if(L<=0){if(e===null)e=h-1+prev/(prev-L||1);L=0}out.push(L);
+  }return{out,e};
+}
+function model(){
+  const g=id=>+$(id).value;
+  const t=g("temp"),p=g("ppl"),sc=g("sup"),lk=g("leak"),lv=g("lvl"),cap=g("cap")||1,ns=g("nsup"),tk=g("tk"),lp=g("lpcd")||135;
+  const heat=Math.max(0,t-30)*HEAT,base=p*lp/24,use=base*(1+heat),inflow=ns*(1+sc/100)/24;
+  return{t,p,sc,lk,lvl:Math.min(lv,cap),cap,tk,heat,use,inflow,base,lp,ns};
+}
+const N=x=>Math.round(x).toLocaleString("en-IN");
+function render(){
+  const m=model(),on={leak:$("t_leak").checked,cut:$("t_cut").checked,gw:$("t_gw").checked,tk:$("t_tk").checked};
+  $("v_temp").textContent=m.t;$("v_ppl").textContent=m.p;$("v_sup").textContent=m.sc;$("v_leak").textContent=m.lk;$("v_lvl").textContent=N($("lvl").value);
+  const hrs=e=>e==null?120:e,s0=sim(m.use,m.inflow,m.lk,m.lvl,m.cap,0,0);
+  const scen=f=>{const use=m.use*(1-(f.cut?NE*CUT:0)-(f.gw?GW:0)),leak=f.leak?0:m.lk;let s=sim(use,m.inflow,leak,m.lvl,m.cap,0,0),at=0;
+    if(f.tk&&m.tk>0&&s.e!==null){at=Math.max(1,Math.floor(s.e-LEAD));s=sim(use,m.inflow,leak,m.lvl,m.cap,m.tk,at)}return{s,at,use,leak}};
+  const steps=[["leak","Fix leak"],["cut","Reduce non-essential use"],["gw","Reuse greywater"],["tk","Schedule tanker"]];
+  let f={},prev=hrs(s0.e),rows=[],last=scen({});
+  for(const [k,name] of steps){if(!on[k]||(k==="leak"&&m.lk<=0))continue;f={...f,[k]:true};const r=scen(f);rows.push([name,hrs(r.s.e)-prev,r,k]);prev=hrs(r.s.e);last=r}
+  const e0=s0.e,e3=last.s.e;
+  const risk=e0==null?["Low",0]:e0<12?["Extreme",3]:e0<36?["High",2]:e0<72?["Moderate",1]:["Low",0];
+  const col=["var(--good)","var(--warn)","#e8590c","var(--bad)"][risk[1]];
+  $("b_h").textContent=e0==null?"No shortage":fmt(e0);$("b_h").style.color=col;
+  $("b_r").textContent=risk[0]+" risk";$("b_r").style.background=col;
+  $("a_h").textContent=e3==null?"No shortage":fmt(e3);$("a_d").textContent=e3==null?"within 5 days":"until empty";
+  const gain=hrs(e3)-hrs(e0);
+  $("gain").textContent=e0==null?"Supply keeps up. Try raising temperature or cutting supply.":gain>0?`+${Math.round(gain)} extra hours of water`:"Tick actions below, or arrange more tanker supply";
+  // crisis score
+  const score=e0==null?0:Math.round(100*(1-Math.min(e0,96)/96));
+  $("score").textContent=score;$("score").style.color=col;
+  $("scomp").innerHTML=`<div>Water remaining: <b>${Math.round(m.lvl/m.cap*100)}%</b></div><div>Supply change: <b>${m.sc}%</b></div><div>Heat impact on demand: <b>+${Math.round(m.heat*100)}%</b></div><div>Leak: <b>${N(m.lk)} L/h</b></div>`;
+  // chart
+  const W=640,H=230,l=48,r=14,tp=12,b=28,pw=W-l-r,ph=H-tp-b,X=h=>l+h/96*pw,Y=v=>tp+ph-(v/m.cap)*ph;
+  const line = (o, c, emptyAt) => {
+    const pts = [];
+    for (let h = 0; h <= 96; h++) {
+      if (emptyAt != null && h > emptyAt) break;
+      pts.push(`${X(h).toFixed(1)},${Y(o[h]).toFixed(1)}`);
+    }
+    if (emptyAt != null && emptyAt <= 96) {
+      // end the line exactly where the tank reaches zero, then stay at zero
+      pts.push(`${X(emptyAt).toFixed(1)},${Y(0).toFixed(1)}`);
+      pts.push(`${X(96).toFixed(1)},${Y(0).toFixed(1)}`);
+    }
+    return `<polyline fill="none" stroke="${c}" stroke-width="2.5" points="${pts.join(" ")}"/>`;
+  };
+  let ax="";for(let h=0;h<=96;h+=24)ax+=`<line x1="${X(h)}" x2="${X(h)}" y1="${tp}" y2="${tp+ph}" stroke="var(--line)"/><text x="${X(h)}" y="${H-8}" fill="var(--mut)" font-size="11" text-anchor="middle">${h}h</text>`;
+  ax+=`<text x="${l-6}" y="${tp+10}" fill="var(--mut)" font-size="11" text-anchor="end">${Math.round(m.cap/1000)}kL</text><text x="${l-6}" y="${tp+ph}" fill="var(--mut)" font-size="11" text-anchor="end">0</text>`;
+  $("chart").innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Tank level over 96 hours before and after actions">${ax}${line(s0.out,"var(--bad)",s0.e)}${line(last.s.out,"var(--good)",last.s.e)}</svg>`;
+  // gains table + details
+  $("gtab").innerHTML="<tr><th>Action</th><th>Water gained</th></tr>"+(rows.length?rows.map(x=>`<tr><td>${x[0]}</td><td><b>+${Math.round(x[1])} h</b></td></tr>`).join(""):"<tr><td>No action selected</td><td>0 h</td></tr>");
+  const a=[];
+  if(m.lk>0.1*m.use)a.push(`Leak signal: actual draw ${N(m.use+m.lk)} L/h vs expected ${N(m.use)} L/h. Inspect pipes, taps and the overhead tank.`);
+  if(last.at){const when=new Date(Date.now()+last.at*36e5).toLocaleString("en-IN",{weekday:"short",hour:"numeric",minute:"2-digit"});a.push(`Tanker of ${N(m.tk)} L is scheduled to arrive by ${when} (in ${last.at} h, ${LEAD} h before the tank would run dry with your other selected actions but without this tanker, which is ${fmt(last.at+LEAD)}). With the tanker included, the model predicts the tank will run dry in ${fmt(last.s.e)}.`)}
+  a.push(`Keep at least ${N(m.p*3)} L (3 L per person) reserved for drinking.`);
+  $("acts").innerHTML=a.map(x=>`<li>${x}</li>`).join("");
+  // why
+  const w=[],drain=m.use+m.lk-m.inflow;
+  if(m.sc<0)w.push(`Supply is ${-m.sc}% below normal: about ${N(m.ns*-m.sc/100)} L/day less is arriving.`);
+  if(m.heat>0)w.push(`${m.t}°C raises demand by ${Math.round(m.heat*100)}%: about ${N((m.use-m.base)*24)} L/day extra.`);
+  if(m.lk>0)w.push(`A ${N(m.lk)} L/h leak wastes about ${N(m.lk*24)} L/day.`);
+  if(drain>0){w.push(`Net drain is ${N(drain)} L/h against ${N(m.lvl)} L in the tank.`);
+    const bg=rows.slice().sort((x,y)=>y[1]-x[1])[0];if(bg&&bg[1]>0)w.push(`Biggest single intervention: <b>${bg[0]}</b> (+${Math.round(bg[1])} h).`)}
+  else w.push("Supply currently covers use, so the tank is not draining.");
+  $("why").innerHTML=w.map(x=>`<li>${x}</li>`).join("");
+  // budget
+  const resv=m.p*3,avail=m.lvl+m.inflow*24-resv,leakNow=on.leak?0:m.lk,dem=(m.use+leakNow)*24,def=dem-avail,per=m.use*24/m.p;
+  if(def<=0){$("bud").innerHTML=`<p style="margin:6px 0 0">Forecast available over the next 24 hours <b>${N(avail)} L</b> (current tank + estimated 24-hour supply − drinking reserve ${N(resv)} L) vs estimated 24-hour demand <b>${N(dem)} L</b>. Estimated surplus: <b>${N(-def)} L</b>.</p>`}
+  else{
+    const cut=Math.min(100,def/(m.use*24)*100),sh=[["Drinking and cooking",.20,0],["Bathing",.35,1],["Cleaning",.15,1.2],["Laundry and flushing",.20,.8],["Gardening and other",.10,2.5]],c=cut/sh.reduce((a,x)=>a+x[1]*x[2],0);
+    $("bud").innerHTML=`<p style="margin:6px 0 0">Forecast available over the next 24 hours <b>${N(avail)} L</b> (current tank + estimated 24-hour supply − drinking reserve ${N(resv)} L) vs estimated 24-hour demand <b>${N(dem)} L</b>${on.leak?" (leak fixed)":""}.<br>Estimated deficit: <b style="color:var(--bad)">${N(def)} L</b>. Recommended reduction: <b>${Math.round(cut)}%</b>, i.e. <b>${Math.round(per)} → ${Math.round(per*(1-cut/100))} L per person per day</b>.</p>
+    <table><tr><th>Where to cut (illustrative split)</th><th>Reduction</th></tr>${sh.map(x=>`<tr><td>${x[0]}</td><td>${x[2]?"−"+Math.min(100,Math.round(x[2]*c))+"%":"none"}</td></tr>`).join("")}</table>`}
+}
+$("cal").onclick=()=>{
+  const r1=+$("r1").value,r2=+$("r2").value,dt=+$("dt").value,m=model(),o=$("calmsg");
+  if(!(dt>0)||r1<=0||r2<0||r2>r1){o.textContent="Enter two readings (second lower than first) and the hours between them.";return}
+  const meas=(r1-r2)/dt,expd=m.use-m.inflow,gap=Math.round(meas-expd);
+  if(gap>0.1*m.use){o.innerHTML=`Tank is draining at <b>${Math.round(meas).toLocaleString("en-IN")} L/h</b>, but the model expects ${Math.round(expd).toLocaleString("en-IN")}. <b>Unexplained loss: ~${gap} L/h, a possible leak.</b> `;
+    const bt=document.createElement("button");bt.textContent="Use in simulator";bt.onclick=()=>{$("leak").value=Math.min(1500,gap);render()};o.appendChild(bt)}
+  else o.innerHTML=`Measured drain ${Math.round(meas).toLocaleString("en-IN")} L/h is close to the model's ${Math.round(expd).toLocaleString("en-IN")} L/h. No leak signal.`;
+};
+document.querySelectorAll("input[type=range],input[type=number]").forEach(i=>i.addEventListener("input",render));
+render();
+</script>
+</body>
+</html>
